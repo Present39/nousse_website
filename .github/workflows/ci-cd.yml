@@ -1,0 +1,130 @@
+# CI/CD Workflow voor NOUSSE Next.js Website
+# Dit workflow voert automatische tests, build en deployment uit naar Vercel
+
+name: CI/CD Pipeline
+
+# Triggers: Bij elke push en pull request naar de main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Workflow permissions voor GITHUB_TOKEN
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Job 1: Code Quality & Testing
+  # Voert lint, tests en build uit om code kwaliteit te valideren
+  quality-check:
+    name: 🔍 Code Quality & Testing
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Stap 1: Checkout de repository code
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # Stap 2: Setup Node.js omgeving
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      # Stap 2.1: Install pnpm
+      - name: 📦 Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      # Stap 3: Installeer project dependencies
+      - name: 📦 Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Stap 4: Voer ESLint uit voor code style checking
+      - name: 🔍 Run ESLint
+        run: pnpm run lint
+
+      # Stap 5: Voer tests uit (momenteel placeholder)
+      - name: 🧪 Run tests
+        run: pnpm run test
+
+      # Stap 6: Build het Next.js project
+      - name: 🏗️ Build application
+        run: pnpm run build
+
+      # Stap 7: Upload build artifacts voor deployment job
+      - name: 📤 Upload build artifacts
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-files
+          path: .next/
+          retention-days: 1
+
+  # Job 2: Deployment naar Vercel
+  # Draait alleen bij push naar main branch na succesvolle quality check
+  deploy:
+    name: 🚀 Deploy to Vercel
+    runs-on: ubuntu-latest
+    # Deploy alleen bij push naar main (niet bij pull requests)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Wacht tot quality-check job succesvol is voltooid
+    needs: quality-check
+    
+    steps:
+      # Stap 1: Checkout repository voor deployment
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # Stap 2: Setup Node.js voor Vercel CLI
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      # Stap 2.1: Install pnpm
+      - name: 📦 Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      # Stap 3: Download build artifacts van quality-check job
+      - name: 📥 Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files
+          path: .next/
+
+      # Stap 4: Installeer Vercel CLI globaal
+      - name: 🔧 Install Vercel CLI
+        run: pnpm install --global vercel@latest
+
+      # Stap 5: Pull Vercel omgeving informatie
+      - name: 🔄 Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      # Stap 6: Build project voor productie met Vercel
+      - name: 🏗️ Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      # Stap 7: Deploy naar Vercel productie
+      - name: 🚀 Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      # Stap 8: Deployment success notificatie
+      - name: ✅ Deployment Complete
+        run: echo "🎉 Deployment naar Vercel succesvol voltooid!"
